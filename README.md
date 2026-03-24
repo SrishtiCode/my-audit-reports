@@ -1,10 +1,10 @@
-# 🛡️ My Audit Reports
+# My Audit Reports
 
 A curated collection of **smart contract security audits** conducted by Srishti Rathi, focused on identifying vulnerabilities, improving protocol safety, and demonstrating real-world Web3 security skills.
 
 ---
 
-## 📌 About
+## About
 
 This repository contains detailed audit reports of Solidity-based smart contracts. Each report follows a structured methodology including:
 
@@ -19,7 +19,7 @@ These audits are part of hands-on learning, competitive security practice, and p
 
 ---
 
-## 🧠 Audit Methodology
+## Audit Methodology
 
 Each audit follows a systematic approach:
 
@@ -49,7 +49,7 @@ Each audit follows a systematic approach:
 
 ---
 
-## 🔍 Sample Findings
+## Sample Findings
 
 - Reentrancy attacks leading to fund drain  
 - Predictable randomness exploitation  
@@ -59,7 +59,7 @@ Each audit follows a systematic approach:
 
 ---
 
-## 🛠 Tools & Technologies
+## Tools & Technologies
 
 - Solidity  
 - Foundry (testing & fuzzing)  
@@ -70,7 +70,7 @@ Each audit follows a systematic approach:
 ---
 
 
-## 🎯 Goals
+## Goals
 
 - Build strong expertise in **smart contract security**  
 - Contribute to the **Web3 ecosystem**  
@@ -81,20 +81,20 @@ Each audit follows a systematic approach:
 
 ---
 
-## 👩‍💻 Author
+## Author
 
 **Srishti Rathi**  
 Smart Contract Security Researcher  
 
 ---
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 These audits are conducted for educational and research purposes and may not cover all possible vulnerabilities. Use findings at your own risk.
 
 ---
 
-## ⭐ Support
+## Support
 
 If you find this repository useful:
 - Star ⭐ the repo  
