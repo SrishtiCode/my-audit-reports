@@ -424,7 +424,7 @@ The Venus Prime contract was reviewed for security vulnerabilities. The audit re
                 } else {
                     _mint(true, users[i]);
                     _initializeMarkets(users[i]);//initialize associated market
-                    //here stakedat is not being reset
+                    // @audit - here `stakedAt` is not being reset
                 }
 
                 unchecked {
