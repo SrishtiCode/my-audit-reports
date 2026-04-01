@@ -132,18 +132,6 @@ Rewards are calculated
 Funds are pulled from PSR if needed
 Claiming can be paused using a Pausable mechanism
 
-### In-Scope Contracts
-[Github](https://github.com/code-423n4/2023-09-venus)  
-```
-contracts/Tokens/Prime/Prime.sol ->  Souldbound token. Main contract of the feature. Prime holders will accrue rewards and they will be able to claim them when they want. 
-contracts/Tokens/Prime/IPrime.sol -> Interface of the Prime contract
-contracts/Tokens/Prime/PrimeStorage.sol -> Storage variables of the Prime contract
-contracts/Tokens/Prime/PrimeLiquidityProvider.sol -> This contract provide liquidity to the Prime token, in an uniform way for a period of time. This liquidity is one of the two sources of funds supported by the Prime tokens.
-contracts/Tokens/Prime/libs/Scores.sol -> Library with the function calculateScore, used to calculate the score associated with a Prime holder, that will finally define the rewards allocated to the user
-contracts/Tokens/Prime/libs/FixedMath.sol -> Library with mathematical operations
-contracts/Tokens/Prime/libs/FixedMath0x.sol -> Library with mathematical operations
-```
-
 ### Contract Architecture
 
 ```
@@ -366,6 +354,46 @@ forge test --match-test test_[testName] -vvvv
 ```
 
 All findings in this report include a passing PoC test or reproducible steps.
+
+
+## Audit Details
+
+**Commit Hash**
+```
+[9dcc9c72514da5fb99a4b66d93938372209e85de]
+```
+
+### Scope
+
+```
+./contracts/Tokens/Prime/
+└── Prime.sol
+└── IPrime.sol
+└── PrimeStorage.sol
+└── PrimeLiquidityProvider.sol
+└── libs/Scores.sol
+└── libs/FixedMath.sol
+
+```
+---
+
+## Executive Summary
+
+The Venus Prime contract was reviewed for security vulnerabilities. The audit revealed [3] High-severity, [3] Medium, [7] Low, and [7] Informational findings.
+
+
+### Issues Found
+
+| Severity | Number of Issues |
+| -------- | :--------------: |
+| High | [3] |
+| Medium | [3] |
+| Low/Informational | [7] |
+| Gas Optimization | [7] |
+| **Total** | **[20]** |
+
+---
+
 
 ---
 
