@@ -1,102 +1,56 @@
-# My Audit Reports
+# Audit Reports
 
-A curated collection of **smart contract security audits** conducted by Srishti Rathi, focused on identifying vulnerabilities, improving protocol safety, and demonstrating real-world Web3 security skills.
-
----
-
-## About
-
-This repository contains detailed audit reports of Solidity-based smart contracts. Each report follows a structured methodology including:
-
-- Protocol overview  
-- Threat modeling  
-- Vulnerability analysis  
-- Proof of Concept (PoC)  
-- Impact assessment  
-- Recommended mitigations  
-
-These audits are part of hands-on learning, competitive security practice, and preparation for professional roles in **smart contract auditing and bug bounty hunting**.
+Practice smart contract security audits written against real-world protocols from past [Code4rena](https://code4rena.com) and [CodeHawks](https://codehawks.com) contests. Vulnerabilities in these reports are already known and fixed — this repo documents my process of independently finding, reproducing, and reporting them.
 
 ---
 
-## Audit Methodology
+## Why This Exists
 
-Each audit follows a systematic approach:
+Security auditing is a skill built through repetition. Each report here represents a full audit cycle:
 
-### 1. Understanding the Protocol
-- Business logic  
-- Roles and trust assumptions  
+- Reading the protocol specification and mapping the architecture
+- Running static analysis tooling (Slither, Aderyn)
+- Manual line-by-line review
+- Writing proof-of-concept tests in Foundry
+- Producing a structured report as I would for a real engagement
 
-### 2. Code Review
-- Manual line-by-line analysis  
-- Edge case identification  
-
-### 3. Vulnerability Identification
-- Reentrancy  
-- Integer overflow/underflow  
-- Access control issues  
-- Denial of Service (DoS)  
-- Logic flaws  
-
-### 4. Testing & Proof of Concept
-- Foundry-based testing  
-- Attack simulations  
-
-### 5. Reporting
-- Severity classification (High / Medium / Low)  
-- Clear impact explanation  
-- Actionable mitigation strategies  
+The goal is to build muscle memory for the process, not just the findings.
 
 ---
 
-## Sample Findings
+## Reports
 
-- Reentrancy attacks leading to fund drain  
-- Predictable randomness exploitation  
-- Denial of service via improper state handling  
-- Incorrect accounting causing protocol failure  
-- Unsafe external calls and missing validations  
-
----
-
-## Tools & Technologies
-
-- Solidity  
-- Foundry (testing & fuzzing)  
-- EVM internals  
-- Manual auditing  
-- Static analysis  
+| Protocol | Category | Findings (H/M/L/I) | Report |
+| -------- | -------- | :----------------: | ------ |
+| Venus Prime | Access Control, On-chain Privacy | 2 / 0 / 0 / 1 | [View](./reports/PasswordStore.md) |
+| *(more coming)* | | | |
 
 ---
 
+## Report Structure
 
-## Goals
+Each report follows a consistent format:
 
-- Build strong expertise in **smart contract security**  
-- Contribute to the **Web3 ecosystem**  
-- Prepare for:
-  - Future Responsibilities 
-  - Bug bounty platforms  
-  - Audit contests (Code4rena, Sherlock)  
-
----
-
-## Author
-
-**Srishti Rathi**  
-Smart Contract Security Researcher  
+- **Protocol Summary** — what the protocol does and its intended security guarantees
+- **Architecture Overview** — contract map, data flow diagram, roles, and key state variables
+- **Audit Methodology** — tooling used, phases followed, and time allocation
+- **Findings** — each vulnerability with description, impact, proof of concept, and recommended mitigation
 
 ---
 
 ## Disclaimer
 
-These audits are conducted for educational and research purposes and may not cover all possible vulnerabilities. Use findings at your own risk.
+All protocols audited here are from past contests. The vulnerabilities are already public and have been fixed. These reports are written for **educational and portfolio purposes only**. They do not represent a live security engagement.
 
 ---
+
+## About
+
+Made by [Srishti](https://SrishtiCode.io) — learning smart contract security one audit at a time.
 
 ## Support
 
 If you find this repository useful:
 - Star ⭐ the repo  
 - Share feedback  
-- Connect for collaboration 
+- Open for opportunities
