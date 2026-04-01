@@ -406,7 +406,7 @@ The Venus Prime contract was reviewed for security vulnerabilities. The audit re
 
 #### Description
 
-[Whenever a new Prime token is created, the users `stakedAt` is reset to 0. This happens when the user claim a revocable token and when he is `issue` a revocable token, but it does not happen when a user is `issue` an irrevocable token.]
+Whenever a new Prime token is created, the users `stakedAt` is reset to 0. This happens when the user claim a revocable token and when he is `issue` a revocable token, but it does not happen when a user is `issue` an irrevocable token.
 
 ```javascript
     //If we want to issue the irrevocable token(cannot be revoke by admin or anyone else) then -> check if the token exist and 
@@ -447,11 +447,11 @@ The Venus Prime contract was reviewed for security vulnerabilities. The audit re
 
 #### Impact
 
-[A user can claim a Prime token without having any XVS staked.
+A user can claim a Prime token without having any XVS staked.
 
 Due to `stakedAt` not being reset when an irrevocable token is issued, a user can later satisfy the staking time condition even after withdrawing all funds. This breaks the core requirement that users must actively stake XVS to claim a Prime token.
 
-As a result, users can gain Prime token benefits without locking any tokens, leading to incorrect reward distribution and potential loss of protocol funds.]
+As a result, users can gain Prime token benefits without locking any tokens, leading to incorrect reward distribution and potential loss of protocol funds.
 
 #### Proof of Concept
 
@@ -532,7 +532,7 @@ function test_claimWithoutStake_dueToIrrevocableIssue() public {
 
 #### Recommended Mitigation
 
-[Reset the user's stakedAt whenever he is issued an irrevocable token.]
+Reset the user's stakedAt whenever he is issued an irrevocable token.
 
 ```diff
 function issue(bool isIrrevocable, address[] calldata users) external {
@@ -559,9 +559,9 @@ function issue(bool isIrrevocable, address[] calldata users) external {
 
 #### Description
 
-[The protocol relies on `pendingScoreUpdates` to track how many users still need score updates after changes to parameters like `alpha` or multipliers. However, this variable can be **incorrectly reduced when a user’s token is burned**, even if their score was never updated.  
+The protocol relies on `pendingScoreUpdates` to track how many users still need score updates after changes to parameters like `alpha` or multipliers. However, this variable can be **incorrectly reduced when a user’s token is burned**, even if their score was never updated.  
 
-Additionally, minting a new token via `claim()` does **not increase `pendingScoreUpdates`**, creating an imbalance. An attacker can exploit this by minting and burning tokens to artificially reduce `pendingScoreUpdates` to zero, preventing further score updates and allowing their own score to remain outdated and inflated.]
+Additionally, minting a new token via `claim()` does **not increase `pendingScoreUpdates`**, creating an imbalance. An attacker can exploit this by minting and burning tokens to artificially reduce `pendingScoreUpdates` to zero, preventing further score updates and allowing their own score to remain outdated and inflated.
 
 ```javascript
 function _updateRoundAfterTokenBurned(address user) internal { 
