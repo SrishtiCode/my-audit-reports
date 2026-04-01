@@ -22,7 +22,7 @@ The goal is to build muscle memory for the process, not just the findings.
 
 | Protocol | Category | Findings (H/M/L/I) | Report |
 | -------- | -------- | :----------------: | ------ |
-| Venus Prime | Access Control, On-chain Privacy | 2 / 0 / 0 / 1 | [View](./reports/PasswordStore.md) |
+| Venus Prime | Business Logic | 3 / 3 / 7 / 7 | [View](./VenusPrime.md) |
 | *(more coming)* | | | |
 
 ---
