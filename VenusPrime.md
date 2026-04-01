@@ -393,8 +393,163 @@ The Venus Prime contract was reviewed for security vulnerabilities. The audit re
 | **Total** | **[20]** |
 
 ---
+## Findings
 
+---
 
+## High
+
+### [H-1] [Irrevocable Token Issuance Does Not Reset `stakedAt`, Allowing Claim Without Active Stake]
+
+**Severity:** `HIGH`
+**Impact:** HIGH · **Likelihood:** HIGH
+
+#### Description
+
+[Whenever a new Prime token is created, the users `stakedAt` is reset to 0. This happens when the user claim a revocable token and when he is `issue` a revocable token, but it does not happen when a user is `issue` an irrevocable token.]
+
+```javascript
+    //If we want to issue the irrevocable token(cannot be revoke by admin or anyone else) then -> check if the token exist and 
+    //and revocable and upgrade it else mint the irrevocable token and initialize market. And if we want to issue revocable 
+    //token then mint revocable token and initialize market and reset staking time.          
+
+    function issue(bool isIrrevocable, address[] calldata users) external {
+        _checkAccessAllowed("issue(bool,address[])");
+
+        if (isIrrevocable) {
+            for (uint256 i = 0; i < users.length; ) {
+                Token storage userToken = tokens[users[i]];//loop through the each user
+                if (userToken.exists && !userToken.isIrrevocable) {//if the user has a token and it is revocable
+                    _upgrade(users[i]);//upgrade it
+                } else {
+                    _mint(true, users[i]);
+                    _initializeMarkets(users[i]);//initialize associated market
+                    //here stakedat is not being reset
+                }
+
+                unchecked {
+                    i++;
+                }
+            }
+        } else {//if revocable
+            for (uint256 i = 0; i < users.length; ) {
+                _mint(false, users[i]);
+                _initializeMarkets(users[i]);
+                delete stakedAt[users[i]];
+
+                unchecked {
+                    i++;
+                }
+            }
+        }
+    }
+```
+
+#### Impact
+
+[A user can claim a Prime token without having any XVS staked.
+
+Due to `stakedAt` not being reset when an irrevocable token is issued, a user can later satisfy the staking time condition even after withdrawing all funds. This breaks the core requirement that users must actively stake XVS to claim a Prime token.
+
+As a result, users can gain Prime token benefits without locking any tokens, leading to incorrect reward distribution and potential loss of protocol funds.]
+
+#### Proof of Concept
+
+**Step-by-step reproduction:**
+
+**1. Stake XVS to initialize `stakedAt`:**
+```bash
+Alice stakes ≥1000 XVS
+```
+
+**2. Issue an irrevocable Prime token (stakedAt NOT reset):**
+```bash
+Admin calls: issue(true, [Alice])
+```
+
+**3. Withdraw all staked XVS:**
+```bash
+Alice withdraws all XVS (stake becomes 0)
+```
+
+**4. Burn the irrevocable token:**
+```bash
+Admin calls: burn(Alice)
+
+```
+**5. Wait for staking period and call claim without staking:**
+```bash
+Alice calls: claim()
+```
+
+**Expected output:**
+```
+[Claim succeeds and a Prime token is minted even though Alice has 0 XVS staked.]
+```
+
+*Or, add the following test to `Test.t.sol`:*
+
+```javascript
+function test_claimWithoutStake_dueToIrrevocableIssue() public {
+    address alice = address(1);
+
+    // Step 1: Alice stakes
+    vm.prank(alice);
+    prime.stake{value: 10 ether}();
+
+    uint256 initialStakedAt = prime.stakedAt(alice);
+    assertTrue(initialStakedAt != 0);
+
+    // Step 2: Admin issues irrevocable token (no reset)
+    address;
+    users[0] = alice;
+    prime.issue(true, users);
+
+    // stakedAt remains unchanged
+    assertEq(prime.stakedAt(alice), initialStakedAt);
+
+    // Step 3: Alice withdraws all stake
+    vm.prank(alice);
+    prime.withdrawAll();
+
+    assertEq(prime.balanceOfStake(alice), 0);
+
+    // Step 4: Admin burns token
+    prime.burn(alice);
+
+    // Step 5: Fast forward time
+    vm.warp(block.timestamp + prime.STAKING_PERIOD());
+
+    // Step 6: Alice claims without staking
+    vm.prank(alice);
+    prime.claim();
+
+    // Unexpected behavior: claim succeeds
+    assertTrue(prime.tokens(alice).exists);
+}
+
+```
+
+#### Recommended Mitigation
+
+[Reset the user's stakedAt whenever he is issued an irrevocable token.]
+
+```diff
+function issue(bool isIrrevocable, address[] calldata users) external {
+        _checkAccessAllowed("issue(bool,address[])");
+
+        if (isIrrevocable) {
+            for (uint256 i = 0; i < users.length; ) {
+                Token storage userToken = tokens[users[i]];
+                if (userToken.exists && !userToken.isIrrevocable) {
+                    _upgrade(users[i]);
+                } else {
+                    _mint(true, users[i]);
+                    _initializeMarkets(users[i]);
++                    delete stakedAt[users[i]]; 
+                }
+          ...
+```
 ---
 
 *Report generated by [Srishti](https://SrishtiCode.io) · [April 2026]*
