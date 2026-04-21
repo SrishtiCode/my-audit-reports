@@ -23,6 +23,7 @@ The goal is to build muscle memory for the process, not just the findings.
 | Protocol | Findings (H/M/L) | Report |
 | -------- | :----------------: | ------ |
 | Venus Prime | 3 / 3 / 8 | [View](./VenusPrime.md) |
+| SukukFi | 1 / 3 / 9 | [View](./SukukFi.md) |
 | *(more coming)* | | |
 
 ---
