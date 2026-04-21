@@ -388,9 +388,8 @@ The Venus Prime contract was reviewed for security vulnerabilities. The audit re
 | -------- | :--------------: |
 | High | [3] |
 | Medium | [3] |
-| Low/Informational | [7] |
-| Gas Optimization | [7] |
-| **Total** | **[20]** |
+| Low/Informational | [8] |
+| **Total** | **[14]** |
 
 ---
 ## Findings
@@ -754,6 +753,641 @@ function _calculateScore(...) internal view returns (uint256) {
 +   capital = capital * (10 ** (18 - IERC20Upgradeable(_getUnderlying(market)).decimals()));
 
     return Scores.calculateScore(..., capital, ...);
+}
+```
+
+---
+
+## Medium
+
+### [M-1] [Scores.sol : Incorrect computation of user's score when alpha is 1]
+
+**Severity:** `MEDIUM`
+**Impact:** MEDIUM · **Likelihood:** MEDIUM
+
+#### Description
+
+The formula for a user’s score depends on the xvs staked and the capital. One core variable in the calculation of a user’s score is alpha which represents the weight for xvs and capital. It has been stated in the documentation that alpha can range from 0 to 1 depending on what kind of incentive the protocol wants to drive (XVS Staking or supply/borrow). Please review Significance of α subsection.
+
+When alpha is 1, xvs has all the weight when calculating a user’s score, and capital has no weight. If we see the Cobb-Douglas function, the value of capital doesn’t matter, it will always return 1 since capital^0 is always 1. So, a user does not need to borrow or lend in a given market since capital does not have any weight in the score calculation.
+
+The issue is an inconsistency in the implementation of the Cobb-Douglas function.
+
+Developers have added an exception: if (xvs == 0 || capital == 0) return 0;
+Because of this the code will always return 0 if either the xvs or the capital is zero, but we know this should not be the case when the alpha value is 1.
+
+#### Proof of Concept
+
+To check how it works:
+
+In describe('boosted yield') add the following code:
+
+```bash
+it.only("calculate score only staking", async () => {
+      const xvsBalance = bigNumber18.mul(5000);
+      const capital = bigNumber18.mul(0);
+
+      await prime.updateAlpha(1, 1); // 1
+
+      //  5000^1 * 0^0 = 5000
+      // BUT IS RETURNING 0!!!
+      expect((await prime.calculateScore(xvsBalance, capital)).toString()).to.be.equal("0");
+});
+```
+
+#### Recommended Mitigation
+
+Only return 0 when (xvs = 0 or capital = 0) * and alpha is not 1.
+---
+
+### [M-2] [DoS and Gas Griefing of Calls to `Prime.updateScores()`]
+
+**Severity:** `MEDIUM`
+**Impact:** MEDIUM · **Likelihood:** MEDIUM
+
+#### Description
+
+`updateScores()` is meant to be called to update the scores of many users after reward alpha is changed or reward multipliers are changed. An attacker can cause calls to `Prime.updateScores()` to out-of-gas revert, delaying score updates. Rewards will be distributed incorrectly until scores are properly updated.
+
+The root cause is a misplaced `i++` increment combined with a `continue` statement. When a user has already been updated, `continue` is hit before `i` is incremented, causing the loop to re-process the same index indefinitely until the transaction runs out of gas:
+
+
+```javascript
+function updateScores(address[] memory users) external {
+    if (pendingScoreUpdates == 0) revert NoScoreUpdatesRequired();
+    if (nextScoreUpdateRoundId == 0) revert NoScoreUpdatesRequired();
+
+    for (uint256 i = 0; i < users.length; ) {
+        address user = users[i];
+
+        if (!tokens[user].exists) revert UserHasNoPrimeToken();
+        if (isScoreUpdated[nextScoreUpdateRoundId][user]) continue; // i never increments
+        ...
+        unchecked {
+            i++; // increment is never reached if `continue` is hit
+        }
+
+        emit UserScoreUpdated(user);
+    }
+}
+```
+
+#### Impact
+
+An attacker can frontrun any call to `updateScores()` by pre-updating a single address that appears in the target call's argument array. When the frontrun call is then executed, the loop gets stuck infinitely on that already-updated address and reverts out of gas. Only one user gets updated per griefing attempt, while the legitimate batch update fails entirely. Rewards will be distributed based on stale, incorrect scores until all users are eventually updated.
+
+#### Proof of Concept
+
+An attacker frontruns `updateScores([user1, user2, user3])` with `updateScores([user3])`. When the original call executes and reaches `user3`, `isScoreUpdated` is already `true`, `continue` is hit, `i` is never incremented, and the transaction loops on `user3` until it runs out of gas and reverts.
+
+Paste and run the following test in the `'mint and burn'` scenario in `Prime.ts` (line 302):
+
+```javascript
+it("dos_updateScores", async () => {
+    // Setup 3 users
+    await prime.issue(true, [
+        user1.getAddress(),
+        user2.getAddress(),
+        user3.getAddress()
+    ]);
+
+    await xvs.connect(user1).approve(xvsVault.address, bigNumber18.mul(1000));
+    await xvsVault.connect(user1).deposit(xvs.address, 0, bigNumber18.mul(1000));
+
+    await xvs.connect(user2).approve(xvsVault.address, bigNumber18.mul(1000));
+    await xvsVault.connect(user2).deposit(xvs.address, 0, bigNumber18.mul(1000));
+
+    await xvs.connect(user3).approve(xvsVault.address, bigNumber18.mul(1000));
+    await xvsVault.connect(user3).deposit(xvs.address, 0, bigNumber18.mul(1000));
+
+    // Change alpha to trigger score update round
+    await prime.updateAlpha(1, 5);
+
+    // Attacker frontruns the batch update with a single-user call for user3
+    await prime.connect(user1).updateScores([user3.getAddress()]);
+
+    // Original batch call now reverts due to infinite loop on user3
+    await expect(
+        prime.updateScores([
+            user1.getAddress(),
+            user2.getAddress(),
+            user3.getAddress()
+        ])
+    ).to.be.reverted;
+});
+```
+
+#### Recommended Mitigation
+
+Move the increment to the for loop header so that continue no longer prevents i from advancing:
+
+```diff
+-   for (uint256 i = 0; i < users.length; ) {
++   for (uint256 i = 0; i < users.length; ++i) {
+        address user = users[i];
+
+        if (!tokens[user].exists) revert UserHasNoPrimeToken();
+        if (isScoreUpdated[nextScoreUpdateRoundId][user]) continue;
+        ...
+-       unchecked {
+-           i++;
+-       }
+
+        emit UserScoreUpdated(user);
+    }
+```
+
+This ensures that already-updated users are simply skipped rather than causing an infinite loop, making the function resilient to griefing.
+
+---
+
+### [M-3] [The `owner` is a Single Point of Failure and a Centralization Risk]
+
+**Severity:** `MEDIUM`
+**Impact:** MEDIUM · **Likelihood:** MEDIUM
+
+#### Description
+
+Having a single EOA as the only owner of contracts is a large centralization risk and a single point of failure. A single private key may be taken in a hack, or the sole holder of the key may become unable to retrieve the key when necessary. Critical protocol functions gated behind `onlyOwner` would then be permanently inaccessible or, worse, fall under the control of a malicious actor.
+
+There are 3 instances of this issue in `PrimeLiquidityProvider.sol`:
+
+```javascript
+File: contracts/Tokens/Prime/PrimeLiquidityProvider.sol
+
+118:    function initializeTokens(address[] calldata tokens_) external onlyOwner {
+
+177:    function setPrimeToken(address prime_) external onlyOwner {
+
+216:    function sweepToken(
+            IERC20Upgradeable token_,
+            address to_,
+            uint256 amount_
+        ) external onlyOwner {
+```
+
+#### Impact
+
+If the owner's private key is compromised or lost, an attacker or no one at all would have exclusive control over the following critical operations:
+
+- `initializeTokens()` — ability to add supported tokens to the liquidity provider, blocking protocol bootstrapping.
+- `setPrimeToken()` — ability to set the Prime token address, a one-time configuration step essential for the protocol to function.
+- `sweepToken()` — ability to recover tokens from the contract, potentially draining all funds if the key is stolen.
+
+#### Proof of Concept
+
+All three functions are gated behind the same single-owner check with no fallback or recovery mechanism:
+
+```javascript
+modifier onlyOwner() {
+    require(owner() == msg.sender, "Ownable: caller is not the owner");
+    _;
+}
+```
+
+A single compromised or lost key grants or removes access to all three functions simultaneously, with no recourse.
+
+#### Recommended Mitigation
+
+Consider one or more of the following approaches:
+
+1. Use a multi-signature wallet (e.g. Gnosis Safe) as the owner address, requiring M-of-N signers to authorize sensitive calls.
+2. Adopt a role-based access control model using OpenZeppelin's AccessControl, separating privileges so no single key controls all critical functions:
+
+```diff
+- function initializeTokens(address[] calldata tokens_) external onlyOwner {
++ function initializeTokens(address[] calldata tokens_) external onlyRole(TOKEN_ADMIN_ROLE) {
+
+- function setPrimeToken(address prime_) external onlyOwner {
++ function setPrimeToken(address prime_) external onlyRole(CONFIG_ROLE) {
+
+- function sweepToken(...) external onlyOwner {
++ function sweepToken(...) external onlyRole(SWEEP_ROLE) {
+```
+
+3. Implement a timelock controller so that sensitive owner actions have a mandatory delay, giving users time to react to malicious or erroneous changes before they take effect.
+
+---
+
+## LOW
+
+### [L-1] [`Prime.sol`'s `_claimInterest()` Should Apply Slippage or Allow Users to Partially Claim Their Interest]
+
+**Severity:** `LOW`
+**Impact:** LOW · **Likelihood:** LOW
+
+#### Description
+
+The `_claimInterest` function hardcodes a 0% slippage tolerance and does not perform a final balance check after attempting to release funds from its two reserve sources. If the contract's balance remains insufficient after both release attempts, the subsequent `safeTransfer` call will revert unconditionally, preventing users from claiming any of their accrued interest.
+
+```javascript
+function _claimInterest(address vToken, address user) internal returns (uint256) {
+    uint256 amount = getInterestAccrued(vToken, user);
+    amount += interests[vToken][user].accrued;
+
+    interests[vToken][user].rewardIndex = markets[vToken].rewardIndex;
+    interests[vToken][user].accrued = 0;
+
+    address underlying = _getUnderlying(vToken);
+    IERC20Upgradeable asset = IERC20Upgradeable(underlying);
+
+    if (amount > asset.balanceOf(address(this))) {
+        address[] memory assets = new address[](1);
+        assets[0] = address(asset);
+        IProtocolShareReserve(protocolShareReserve).releaseFunds(comptroller, assets);
+        if (amount > asset.balanceOf(address(this))) {
+            IPrimeLiquidityProvider(primeLiquidityProvider).releaseFunds(address(asset));
+            // @audit - no final check; if balance is still insufficient,
+            // safeTransfer will always revert and user receives nothing
+            unreleasedPLPIncome[underlying] = 0;
+        }
+    }
+
+    asset.safeTransfer(user, amount); // reverts if balance < amount
+
+    emit InterestClaimed(user, vToken, amount);
+    return amount;
+}
+```
+The contract attempts to top up its balance in two steps:
+
+1. Release funds from `IProtocolShareReserve`.
+2. If still insufficient, release funds from `IPrimeLiquidityProvider`.
+
+However, there is no final guard before `safeTransfer` to confirm the balance is now sufficient. If both releases fail to cover the full `amount`, the transfer reverts and the user walks away with nothing, even if a partial payment was possible.
+
+#### Impact
+
+If both reserve sources are temporarily underfunded, users are completely blocked from claiming any accrued interest. This leads to user frustration, erodes trust in the platform, and effectively locks user funds until the contract happens to accumulate sufficient balance — with no mechanism to notify users or queue the deficit for later.
+
+#### Proof of Concept
+
+Consider the following scenario:
+
+1. A user accrues 1000 USDC in Prime interest.
+2. _claimInterest() is called — the contract balance is 200 USDC.
+3. releaseFunds() from ProtocolShareReserve adds 300 USDC → balance is now 500 USDC.
+4. releaseFunds() from PrimeLiquidityProvider adds 400 USDC → balance is now 900 USDC.
+5. safeTransfer(user, 1000) is called — reverts because 900 < 1000.
+6. The user receives nothing, despite 900 USDC being available and their accrued balance having already been reset to 0.
+
+#### Recommended Mitigation
+
+Add a final balance check after both release attempts. Transfer only what is available, and store any deficit so it can be claimed later once the contract has sufficient funds:
+
+```diff
+function _claimInterest(address vToken, address user) internal returns (uint256) {
+    ...
+    if (amount > asset.balanceOf(address(this))) {
+        address[] memory assets = new address[](1);
+        assets[0] = address(asset);
+        IProtocolShareReserve(protocolShareReserve).releaseFunds(comptroller, assets);
+        if (amount > asset.balanceOf(address(this))) {
+            IPrimeLiquidityProvider(primeLiquidityProvider).releaseFunds(address(asset));
+            unreleasedPLPIncome[underlying] = 0;
+        }
+    }
+
++   uint256 availableBalance = asset.balanceOf(address(this));
++   uint256 transferAmount = (amount <= availableBalance) ? amount : availableBalance;
+
++   // Store any deficit so the user can claim the remainder later
++   if (transferAmount < amount) {
++       interests[vToken][user].accrued += amount - transferAmount;
++   }
+
+-   asset.safeTransfer(user, amount);
++   asset.safeTransfer(user, transferAmount);
+
+-   emit InterestClaimed(user, vToken, amount);
+-   return amount;
++   emit InterestClaimed(user, vToken, transferAmount);
++   return transferAmount;
+}
+```
+
+This ensures users always receive whatever is currently available rather than nothing, and any remaining deficit is preserved in accrued for a future claim rather than silently lost.
+
+---
+
+### [L-2][`getEffectiveDistributionSpeed()` Should Prevent Reversion and Return 0 if Accrued Exceeds Balance]
+
+**Severity:** `LOW`
+**Impact:** LOW · **Likelihood:** LOW
+
+#### Description
+
+The `getEffectiveDistributionSpeed()` function assumes that `balance >= accrued` is always true, but this invariant can be broken. The `sweepToken()` function allows the owner to withdraw tokens from the contract without updating `tokenAmountAccrued`, meaning the accrued amount can exceed the actual balance. When this happens, the subtraction `balance - accrued` underflows and the function reverts.
+
+```javascript
+function getEffectiveDistributionSpeed(address token_) external view returns (uint256) {
+    uint256 distributionSpeed = tokenDistributionSpeeds[token_];
+    uint256 balance = IERC20Upgradeable(token_).balanceOf(address(this));
+    uint256 accrued = tokenAmountAccrued[token_];
+
+    if (balance - accrued > 0) { // underflows if accrued > balance
+        return distributionSpeed;
+    }
+
+    return 0;
+}
+```
+Contrast `sweepToken()` with `releaseFunds()` — the former transfers tokens without resetting `tokenAmountAccrued`, while the latter correctly zeroes it out:
+
+```javascript
+// sweepToken - does NOT update tokenAmountAccrued
+function sweepToken(IERC20Upgradeable token_, address to_, uint256 amount_) external onlyOwner {
+    uint256 balance = token_.balanceOf(address(this));
+    if (amount_ > balance) revert InsufficientBalance(amount_, balance);
+    token_.safeTransfer(to_, amount_);
+}
+
+// releaseFunds - correctly resets tokenAmountAccrued
+function releaseFunds(address token_) external {
+    accrueTokens(token_);
+    uint256 accruedAmount = tokenAmountAccrued[token_];
+    tokenAmountAccrued[token_] = 0; // ✅ reset
+    IERC20Upgradeable(token_).safeTransfer(prime, accruedAmount);
+}
+```
+
+#### Impact
+
+After a `sweepToken()` call that reduces the contract balance below the accrued amount, `getEffectiveDistributionSpeed()` will revert on every call for that token due to an arithmetic underflow. Any off-chain or on-chain caller relying on this view function to check distribution speeds will be broken until the balance is replenished.
+
+#### Proof of Concept
+
+Consider the following scenario:
+
+1. Contract holds 500 USDC; `tokenAmountAccrued[USDC] = 300`.
+2. Owner calls `sweepToken(USDC, owner, 400)` — balance drops to 100 USDC, accrued remains 300.
+3. `getEffectiveDistributionSpeed(USDC)` is called — `balance - accrued = 100 - 300` underflows and reverts.
+
+#### Recommended Mitigation
+
+Replace the unsafe subtraction with an explicit comparison:
+
+```diff
+function getEffectiveDistributionSpeed(address token_) external view returns (uint256) {
+    uint256 distributionSpeed = tokenDistributionSpeeds[token_];
+    uint256 balance = IERC20Upgradeable(token_).balanceOf(address(this));
+    uint256 accrued = tokenAmountAccrued[token_];
+
+-   if (balance - accrued > 0) {
++   if (balance > accrued) {
+        return distributionSpeed;
+    }
+
+    return 0;
+}
+```
+
+This single-character change eliminates the underflow risk and correctly returns `0` whenever accrued meets or exceeds the available balance.
+
+---
+
+### [L-3][Inconsistency in Parameter Validations Between Sister Functions]
+
+**Severity:** `LOW`
+**Impact:** LOW · **Likelihood:** LOW
+
+#### Description
+
+The `updateAlpha()` function validates its inputs through `_checkAlphaArguments()`, which ensures the denominator is non-zero and the numerator does not exceed the denominator. However, the logically analogous `updateMultipliers()` function has no equivalent validation for its `supplyMultiplier` and `borrowMultiplier` parameters. This inconsistency means invalid or illogical multiplier values can be set without any on-chain revert.
+
+```javascript
+function _checkAlphaArguments(uint128 _alphaNumerator, uint128 _alphaDenominator) internal {
+    if (_alphaDenominator == 0 || _alphaNumerator > _alphaDenominator) {
+        revert InvalidAlphaArguments();
+    }
+}
+
+// updateAlpha validates inputs ✅
+function updateAlpha(uint128 _alphaNumerator, uint128 _alphaDenominator) external {
+    _checkAlphaArguments(_alphaNumerator, _alphaDenominator);
+    ...
+}
+
+// updateMultipliers has no equivalent validation ❌
+function updateMultipliers(address market, uint256 supplyMultiplier, uint256 borrowMultiplier) external {
+    if (!markets[market].exists) revert MarketNotSupported();
+    ...
+    markets[market].supplyMultiplier = supplyMultiplier;
+    markets[market].borrowMultiplier = borrowMultiplier;
+    _startScoreUpdateRound();
+}
+```
+
+#### Impact
+
+Without validation, zero or otherwise illogical multiplier values can be written to a market's configuration. This could result in incorrect reward calculations or unintended score update rounds being triggered with invalid state.
+
+
+#### Recommended Mitigation
+
+Introduce a `_checkMultipliersArguments()` validation function and apply it inside `updateMultipliers()`, mirroring the pattern already established by `updateAlpha()`:
+
+```diff
++ function _checkMultipliersArguments(uint256 supplyMultiplier, uint256 borrowMultiplier) internal pure {
++     if (supplyMultiplier == 0 || borrowMultiplier == 0) {
++         revert InvalidMultiplierArguments();
++     }
++ }
+
+function updateMultipliers(address market, uint256 supplyMultiplier, uint256 borrowMultiplier) external {
++   _checkMultipliersArguments(supplyMultiplier, borrowMultiplier);
+    if (!markets[market].exists) revert MarketNotSupported();
+    ...
+}
+```
+---
+
+### [L-4][The `lastAccruedBlock` Naming Needs to Be Refactored]
+
+**Severity:** `LOW`
+**Impact:** LOW · **Likelihood:** LOW
+
+#### Description
+
+The NatSpec comment above the `lastAccruedBlock` mapping in `PrimeLiquidityProvider.sol` incorrectly describes it as storing the rate at which a token is distributed to the Prime contract. In reality, this mapping stores the last block number at which an accrual was made for a given token — a fundamentally different concept.
+
+```javascript
+File: contracts/Tokens/Prime/PrimeLiquidityProvider.sol
+
+/// @notice The rate at which token is distributed to the Prime contract
+mapping(address => uint256) public lastAccruedBlock; // comment is wrong
+```
+The comment describes `tokenDistributionSpeeds`, not `lastAccruedBlock`. This mismatch between documentation and implementation creates confusion for developers integrating with or auditing the protocol.
+
+#### Impact
+
+Misleading NatSpec causes developer confusion and increases the risk of misuse or incorrect integrations that rely on documentation rather than implementation.
+
+#### Recommended Mitigation
+
+Replace the unsafe subtraction with an explicit comparison:
+
+```diff
+- /// @notice The rate at which token is distributed to the Prime contract
++ /// @notice The last block at which tokens were accrued for a given address
+mapping(address => uint256) public lastAccruedBlock;
+```
+
+---
+
+### [L-5][More Sanity Checks Should Be Applied to `calculateScore()`]
+
+**Severity:** `LOW`
+**Impact:** LOW · **Likelihood:** LOW
+
+#### Description
+
+The `calculateScore()` function accepts alpha numerator and denominator as `uint256` values and later casts them to `int256` when computing the exponentiation. If either value exceeds `type(int256).max`, the cast will overflow and cause a revert, with no user-friendly error message.
+
+#### Impact
+
+While passing a value above `type(int256).max` is unlikely in practice, the absence of an explicit check means such a scenario produces an opaque panic revert rather than a descriptive protocol error. Adding bounds checks improves robustness and developer experience.
+
+#### Recommended Mitigation
+
+Validate that numerator and denominator values are within safe int256 bounds before use:
+
+```diff
+function calculateScore(...) public view returns (uint256) {
++   require(alphaNumerator <= uint256(type(int256).max), "alphaNumerator overflow");
++   require(alphaDenominator <= uint256(type(int256).max), "alphaDenominator overflow");
+    ...
+}
+```
+
+---
+
+### [L-6][`getPendingInterests()` Should Handle Cases Where a Market Is Unavailable]
+
+**Severity:** `LOW`
+**Impact:** LOW · **Likelihood:** LOW
+
+#### Description
+
+`getPendingInterests()` iterates over all markets to fetch accrued interest for a user. If any market becomes unavailable or reverts internally (e.g., due to a paused or deprecated market), the entire loop is interrupted and the function reverts, making pending interest data for all subsequent markets inaccessible.
+
+```javascript
+function getPendingInterests(address user) external returns (PendingInterest[] memory pendingInterests) {
+    address[] storage _allMarkets = allMarkets;
+    PendingInterest[] memory pendingInterests = new PendingInterest[](_allMarkets.length);
+
+    for (uint256 i = 0; i < _allMarkets.length; ) {
+        address market = _allMarkets[i];
+        uint256 interestAccrued = getInterestAccrued(market, user); // ❌ can revert
+        uint256 accrued = interests[market][user].accrued;
+
+        pendingInterests[i] = PendingInterest({
+            market: IVToken(market).underlying(),
+            amount: interestAccrued + accrued
+        });
+
+        unchecked { i++; }
+    }
+
+    return pendingInterests;
+}
+```
+
+#### Impact
+
+A single failing market blocks retrieval of pending interest data for all other markets. This can mislead users into thinking they have no pending rewards and may affect user decisions regarding claiming or staking.
+
+#### Recommended Mitigation
+
+Wrap the inner calls in a try/catch block and emit an event for failed markets, allowing the loop to continue:
+
+```diff
++ event MarketCallFailed(address indexed market);
+
+for (uint256 i = 0; i < _allMarkets.length; ) {
+    address market = _allMarkets[i];
+
++   try this.getInterestAccrued(market, user) returns (uint256 interestAccrued) {
+        uint256 accrued = interests[market][user].accrued;
+        pendingInterests[i] = PendingInterest({
+            market: IVToken(market).underlying(),
+            amount: interestAccrued + accrued
+        });
++   } catch {
++       emit MarketCallFailed(market);
++   }
+
+    unchecked { i++; }
+}
+```
+
+---
+
+### [L-7][Missing Zero/`isContract` Checks in Important Functions]
+
+**Severity:** `LOW`
+**Impact:** LOW · **Likelihood:** LOW
+
+#### Description
+
+The protocol defines `_ensureZeroAddress()` as a standard guard against zero-address inputs, and uses it in some functions such as `setPrime()`. However, this check is not consistently applied across all functions that accept address parameters, leaving several entry points vulnerable to misconfiguration. Additionally, no `isContract()` check exists for cases where the provided address must be a deployed contract.
+
+```javascript
+function _ensureZeroAddress(address address_) internal pure {
+    if (address_ == address(0)) revert InvalidArguments();
+}
+```
+
+#### Impact
+
+An admin error passing a zero address or an EOA where a contract is expected could misconfigure the protocol silently, potentially causing downstream failures when the address is later called as a contract.
+
+#### Recommended Mitigation
+
+Apply `_ensureZeroAddress()` to all functions accepting address parameters. For addresses that must be contracts, add an `isContract()` helper:
+
+```diff
++ event MarketCallFailed(address indexed market);
++ function isContract(address addr) internal view returns (bool) {
++     uint256 size;
++     assembly { size := extcodesize(addr) }
++     return size > 0;
++ }
+```
+Then apply both checks at all relevant entry points where a valid contract address is required.
+
+---
+
+### [L-8][The `uintDiv()` Function from `FixedMath.sol` Should Protect Against Division by Zero]
+
+**Severity:** `LOW`
+**Impact:** LOW · **Likelihood:** LOW
+
+#### Description
+
+The `uintDiv()` function guards against negative divisors but does not guard against a divisor of `0`. Passing `f = 0` bypasses the existing check and causes a panic error due to division by zero, rather than a clean protocol revert with a descriptive error.
+
+```javascript
+function uintDiv(uint256 u, int256 f) internal pure returns (uint256) {
+    if (f < 0) revert InvalidFixedPoint(); // guards negative
+    // f == 0 is accepted and causes a panic
+    return uint256((u.toInt256() * FixedMath0x.FIXED_1) / f);
+}
+```
+
+#### Impact
+
+A zero divisor produces an unhandled panic revert rather than a descriptive `InvalidFixedPoint` revert, making debugging harder and the protocol's error handling inconsistent.
+
+#### Recommended Mitigation
+
+Extend the existing guard to also reject zero:
+
+```diff
+function uintDiv(uint256 u, int256 f) internal pure returns (uint256) {
+-   if (f < 0) revert InvalidFixedPoint();
++   if (f <= 0) revert InvalidFixedPoint();
+    return uint256((u.toInt256() * FixedMath0x.FIXED_1) / f);
 }
 ```
 
