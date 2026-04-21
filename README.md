@@ -24,6 +24,7 @@ The goal is to build muscle memory for the process, not just the findings.
 | -------- | :----------------: | ------ |
 | Venus Prime | 3 / 3 / 8 | [View](./VenusPrime.md) |
 | SukukFi | 1 / 3 / 9 | [View](./SukukFi.md) |
+| Panoptic | 3 / 19 / 11 | [View](./Panoptic.md) |
 | *(more coming)* | | |
 
 ---
