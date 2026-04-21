@@ -20,10 +20,10 @@ The goal is to build muscle memory for the process, not just the findings.
 
 ## Reports
 
-| Protocol | Category | Findings (H/M/L/I) | Report |
-| -------- | -------- | :----------------: | ------ |
-| Venus Prime | Business Logic | 3 / 3 / 7 / 7 | [View](./VenusPrime.md) |
-| *(more coming)* | | | |
+| Protocol | Findings (H/M/L) | Report |
+| -------- | :----------------: | ------ |
+| Venus Prime | 3 / 3 / 8 | [View](./VenusPrime.md) |
+| *(more coming)* | | |
 
 ---
 
